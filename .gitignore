@@ -1,3 +1,4 @@
 # ignore ipython checkpoints and pyc files
 .ipynb_checkpoints/*
 __pycache__/*
+.DS_Store
