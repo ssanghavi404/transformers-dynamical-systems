@@ -1,4 +1,4 @@
-# Adapted from CS 182 Transformer Attention HW
+# Adapted from CS 182 Transformers Starter Code
 from typing import Optional, List
 from collections import namedtuple
 
@@ -79,19 +79,14 @@ class TransformerFeedForward(nn.Module):
         dense_out = self.dropout(dense_out) # Add the dropout here
         return dense_out + inputs # Add the residual here
 
-
 class TransformerEncoderBlock(nn.Module):
     """An encoding block from the paper Attention Is All You Need (https://arxiv.org/pdf/1706.03762.pdf). 
     :param inputs: Tensor with shape [batch_size, sequence_length, channels]
     :return: output: Tensor with same shape as input
     """
 
-    def __init__(self,
-                 input_size,
-                 n_heads,
-                 filter_size,
-                 hidden_size,
-                 dropout = None) -> None:
+    def __init__(self, input_size, n_heads,
+                 filter_size, hidden_size, dropout = None) -> None:
         super().__init__()
         self.norm = nn.LayerNorm(input_size)
         self.self_attention = MultiHeadAttention(n_heads,[input_size,input_size])
@@ -109,20 +104,19 @@ class TransformerEncoder(nn.Module):
     Stack of TransformerEncoderBlocks. Performs repeated self-attention.
     """
 
-    def __init__(self,
-                 embedding_layer,
-                # input_size,
-                n_layers, n_heads, d_model, d_filter, dropout=None):
+    def __init__(self, seq_input_size, # size of the input tokens (obs_dim + input_dim)
+                embed_size, output_size, 
+                n_layers, n_heads, d_filter, 
+                dropout=None) -> None:
         super().__init__()
-
-        self.embedding_layer = embedding_layer
-        embed_size = d_model #self.embedding_layer.embed_size
-        # The encoding stack is a stack of transformer encoder blocks
+        self.embedding_layer = nn.Linear(seq_input_size, embed_size)
+        self.positional_encoding = PositionEmbedding(hidden_size=embed_size)
         self.encoding_stack = []
         for i in range(n_layers):
-            encoder = TransformerEncoderBlock(embed_size, n_heads, d_filter, d_model, dropout)
+            encoder = TransformerEncoderBlock(embed_size, n_heads, d_filter, embed_size, dropout)
             setattr(self,f"encoder{i}",encoder)
             self.encoding_stack.append(encoder)
+        self.output_layer = nn.Linear(embed_size, output_size)
 
     def forward(self, inputs, encoder_mask=None):
         """
@@ -133,8 +127,10 @@ class TransformerEncoder(nn.Module):
                 output: a Tensor with shape [batch_size, sequence_length, d_model]
         """
         output = self.embedding_layer(inputs)
+        output = self.positional_encoding(output)
         for encoder in self.encoding_stack:
             output = encoder(output, self_attention_mask=encoder_mask)
+        output = self.output_layer(output)
         return output
 
 
@@ -148,16 +144,12 @@ class TransformerDecoderBlock(nn.Module):
     :return: output: Tensor with same shape as decoder_inputs
     """
 
-    def __init__(self,
-                 input_size,
-                 n_heads,
-                 filter_size,
-                 hidden_size,
+    def __init__(self, input_size, n_heads,
+                 filter_size, hidden_size,
                  dropout = None) -> None:
         super().__init__()
         self.self_norm = nn.LayerNorm(input_size)
         self.self_attention = MultiHeadAttention(n_heads,[input_size,input_size])
-        
         self.feed_forward = TransformerFeedForward(input_size, filter_size, hidden_size, dropout)
 
     def forward(self, decoder_inputs, self_attention_mask=None):
@@ -172,10 +164,9 @@ class TransformerDecoderBlock(nn.Module):
 
         return output
 
-class TransformerDecoder(nn.Module):
+class TransformerDecoder(nn.Module): # Note: there is no cross-attention here. It is just next-token prediction, GPT style.
     """
         Stack of TransformerDecoderBlocks. Performs initial embedding to d_model dimensions, then repeated self-attention
-        Defaults to 6 layers of self-attention.
     """
 
     def __init__(self,
@@ -185,7 +176,8 @@ class TransformerDecoder(nn.Module):
                 dropout = None) -> None:
         super().__init__()
         
-        self.embedding_layer = nn.Linear(seq_input_size, embed_size)
+        self.embedding_layer = nn.Linear(seq_input_size, embed_size) # Project into the higher dimension embedding size
+        self.positional_encoding = PositionEmbedding(hidden_size=embed_size) # add the positional encoding
         self.decoding_stack = []
         for i in range(n_layers):
             decoder = TransformerDecoderBlock(embed_size, n_heads, d_filter, embed_size, dropout)
@@ -195,45 +187,40 @@ class TransformerDecoder(nn.Module):
 
     # Self attention mask is a upper triangular mask to prevent attending to future targets + a padding mask
     # attention mask is just the padding mask
-    def forward(self, target_input, decoder_mask=None, mask_future=True,
-        shift_target_sequence_right=False):
+    def forward(self, target_input, decoder_mask=None, mask_future=True, shift_target_sequence_right=False):
         """
             Args:
-                inputs: a tuple of (encoder_output, target_embedding)
-                    encoder_output: a float32 Tensor with shape [batch_size, sequence_length, d_model]
-                    target_input: either a int32 or float32 Tensor with shape [batch_size, target_length, ndims]
-                    cache: Used for fast decoding, a dictionary of tf.TensorArray. None during training.
+                target_input: either a int32 or float32 Tensor with shape [batch_size, target_length, ndims]
                 mask_future: a boolean for whether to mask future states in target self attention
 
-            Returns:
-                a tuple of (encoder_output, output)
-                    output: a Tensor with shape [batch_size, sequence_length, d_model]
+            Returns a Tensor with shape [batch_size, sequence_length, d_model]
         """
+        # print("target input shape", target_input.shape)
         if shift_target_sequence_right:
             target_input = self.shift_target_sequence_right(target_input)
-
+        # print("after shifting right: target input shape", target_input.shape)
         target_embedding = self.embedding_layer(target_input)
 
-        # Build the future-mask if necessary. This is an upper-triangular mask
-        # which is used to prevent the network from attending to later timesteps
-        # in the target embedding
+        # Build the future-mask (upper triangular) to prevent the network from attending to later timesteps
         batch_size = target_embedding.shape[0]
         sequence_length = target_embedding.shape[1]
         self_attention_mask = self.get_self_attention_mask(batch_size, sequence_length, decoder_mask, mask_future)
 
-        # Now actually do the decoding which should take us to the right dimension
-        decoder_output = target_embedding
+        # Pass it through the decoder stack and the final output layer
+        decoder_output = self.positional_encoding(target_embedding)
         for decoder in self.decoding_stack:
             decoder_output = decoder(decoder_output, self_attention_mask=self_attention_mask)
-
-        # Use the output layer for the final output. For example, this will map to the vocabulary
         output = self.output_layer(decoder_output)
         return output
 
     def shift_target_sequence_right(self, target_sequence):
-        constant_values = 0 if target_sequence.dtype in [torch.int32, torch.int64] else 1e-10
-        pad_array = [1,0,0,0]
-        target_sequence = F.pad(target_sequence, pad_array, value=constant_values)[:, :-1]
+        const_val = 0 if target_sequence.dtype in [torch.int32, torch.int64] else 1e-10
+        # pad_array is strange. 
+        # The padding size by which to pad some dimensions of input are described starting from the last dimension and moving forward.
+        # to pad the last 3 dimensions, use (padding_left, padding_right, padding_top, padding_bottom, padding_front, padding_back)
+
+        pad_array = [0,0,1,0] # add one zero-pad on the left of the second dimension.
+        target_sequence = F.pad(target_sequence, pad_array, value=const_val)[:, :-1]
         return target_sequence
 
     def get_future_mask(self, batch_size, sequence_length):
@@ -250,7 +237,6 @@ class TransformerDecoder(nn.Module):
         yind = torch.arange(sequence_length)[:,None].repeat(*(1, sequence_length))
         mask = yind >= xind
         mask = mask[None,...].repeat(*(batch_size, 1, 1))
-
         return mask.to(get_device())
 
     def get_self_attention_mask(self, batch_size, sequence_length, decoder_mask, mask_future):
@@ -284,14 +270,9 @@ class TransformerDecoder(nn.Module):
 
         return cross_attention_mask
 
-class TransformerInputEmbedding(nn.Module):
+class TransformerInputEmbedding(nn.Module): # Used for word sentences with finite vocabulary (Not used for trajectory task)
 
-    def __init__(self,
-                 embed_size,
-                 vocab_size = None,
-                 dropout = None,
-                 batch_norm = False,
-                 embedding_initializer=None) -> None:
+    def __init__(self, embed_size, vocab_size = None, batch_norm = False) -> None:
         super().__init__()
         self.embed_size = embed_size
         self.embedding = nn.Embedding(vocab_size, embed_size) # , weights=[embedding_initializer]
@@ -300,18 +281,13 @@ class TransformerInputEmbedding(nn.Module):
         self.batch_norm = None if batch_norm is False else nn.BatchNorm1d(embed_size)
 
     def forward(self, inputs, start=1):
-
         # Compute the actual embedding of the inputs by using the embedding layer
         embedding = self.embedding(inputs)
-
-        if self.batch_norm:
-            embedding = self.batch_norm(embedding.permute((0,2,1))).permute((0,2,1))
-
+        if self.batch_norm: embedding = self.batch_norm(embedding.permute((0,2,1))).permute((0,2,1))
         embedding = self.position_encoding(embedding, start=start)
         return embedding
 
-
-class Transformer(nn.Module):
+class Transformer(nn.Module): # Full encoder-decoder transformer (not used for trajectory tasks) 
 
     def __init__(self,
                  vocab_size = None,
@@ -332,7 +308,7 @@ class Transformer(nn.Module):
         self.d_filter = d_filter
         self.dropout_weight = 0 if dropout is None else dropout
 
-        input_embedding = TransformerInputEmbedding(d_model, vocab_size, dropout) # , embedding_initializer=embedding_initializer
+        input_embedding = TransformerInputEmbedding(d_model, vocab_size) # , embedding_initializer=embedding_initializer
 
         output_layer = EmbeddingTranspose(input_embedding.embedding)
 
@@ -373,8 +349,7 @@ class Transformer(nn.Module):
 
         return decoder_output # We return the decoder's output
 
-
-class TransformerTrainer(nn.Module):
+class TransformerTrainer(nn.Module): # Transformer Trainer (not used for trajectory task)
     def __init__(self, vocab_size, d_model, input_length, output_length, n_layers, d_filter, dropout=0, learning_rate=1e-3):
         super().__init__()
         self.model = Transformer(vocab_size=vocab_size, d_model=d_model, n_layers=n_layers, d_filter=d_filter)
