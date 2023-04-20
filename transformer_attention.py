@@ -1,13 +1,10 @@
 # Adapted from CS 182 Transformer Attention HW
-from typing import Optional, Callable, Tuple
-
 import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import weight_norm
 
 from transformer_utils import ApplyAttentionMask
-
 
 class AttentionQKV(nn.Module):
     """
@@ -32,9 +29,9 @@ class AttentionQKV(nn.Module):
         key_dim = torch.tensor(keys.shape[-1],dtype=torch.float32)
         similarity = torch.matmul(queries,keys.transpose(-1,-2))/torch.sqrt(key_dim) # Compute the similarity according to the QKV formula
 
-        masked_similarity = self.apply_mask(similarity, mask=mask) # We give you the mask to apply so that it is correct, you do not need to modify this.
-        weights = F.softmax(masked_similarity, dim=-1) # Turn the similarity into a normalized output. Remember that the last dim contains the features
-        output = torch.matmul(weights,values) # Obtain the output
+        masked_similarity = self.apply_mask(similarity, mask=mask) # Masked similarity
+        weights = F.softmax(masked_similarity, dim=-1) # Turn the similarity into a normalized output. The last dim contains the features
+        output = torch.matmul(weights,values) 
         return output, weights
 
 
@@ -68,7 +65,6 @@ class MultiHeadProjection(nn.Module):
         queries, keys, values = inputs
 
         # Split each of the projection into its heads, by adding a new dimension
-        # You must implement _split_heads, and _combine_heads
         queries_split = self._split_heads(queries)
         keys_split = self._split_heads(keys)
         values_split = self._split_heads(values)

@@ -80,7 +80,7 @@ class LearnedKFilter:
         self.Aprime = torch.eye(state_dim, state_dim, requires_grad=True) # to be learned
         self.Bprime = torch.zeros(state_dim, input_dim, requires_grad=True) # to be learned
         self.Gprime = torch.zeros(state_dim, obs_dim, requires_grad=True) # to be learned
-        self.Cprime = torch.eye(obs_dim, state_dim, requires_grad=False) # to be learned? NO, just use the identity for now
+        self.Cprime = torch.eye(obs_dim, state_dim, requires_grad=True) # to be learned? Give it a try. #
 
         self.state_size = state_dim
         self.input_size = input_dim
@@ -123,7 +123,7 @@ class LearnedKFilter:
         while curr_loss > eps and i < maxIt:
             seq_loss = None
             curr_estimate = self.starting_state
-            if i % 10 == 0: print('Iteration', i, ": Loss", curr_loss)
+            if i % 1000 == 0: print('Iteration', i, ": Loss", curr_loss)
             for t in range(T-1):
                 next_estimate = self.predict(curr_estimate, torch.tensor(measurements[t], requires_grad=False), torch.tensor(inputs[t], requires_grad=False) if inputs is not None else None)
                 

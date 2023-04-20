@@ -13,7 +13,6 @@ from transformer_attention import MultiHeadAttention
 class PositionEmbedding(nn.Module):
     """
     Adds positional embedding to an input embedding.
-
     Based on https://arxiv.org/pdf/1706.03762.pdf.
     """
     def __init__(self, hidden_size):
@@ -49,7 +48,7 @@ class PositionEmbedding(nn.Module):
 
         # interleave the sin and cos. For more info see:
         # https://discuss.pytorch.org/t/how-to-interleave-two-tensors-along-certain-dimension/11332/3
-        position_shape = (1, sequence_length, self.hidden_size) # fill in the other two dimensions
+        position_shape = (1, sequence_length, self.hidden_size)
         position_embedding = torch.stack((sin_embedding,cos_embedding), dim=3).view(position_shape)
 
         pos_embed_deviced = position_embedding.to(get_device())
@@ -269,112 +268,3 @@ class TransformerDecoder(nn.Module): # Note: there is no cross-attention here. I
             cross_attention_mask = torch.logical_and(enc_attention_mask, dec_attention_mask)
 
         return cross_attention_mask
-
-class TransformerInputEmbedding(nn.Module): # Used for word sentences with finite vocabulary (Not used for trajectory task)
-
-    def __init__(self, embed_size, vocab_size = None, batch_norm = False) -> None:
-        super().__init__()
-        self.embed_size = embed_size
-        self.embedding = nn.Embedding(vocab_size, embed_size) # , weights=[embedding_initializer]
-
-        self.position_encoding = PositionEmbedding(embed_size)
-        self.batch_norm = None if batch_norm is False else nn.BatchNorm1d(embed_size)
-
-    def forward(self, inputs, start=1):
-        # Compute the actual embedding of the inputs by using the embedding layer
-        embedding = self.embedding(inputs)
-        if self.batch_norm: embedding = self.batch_norm(embedding.permute((0,2,1))).permute((0,2,1))
-        embedding = self.position_encoding(embedding, start=start)
-        return embedding
-
-class Transformer(nn.Module): # Full encoder-decoder transformer (not used for trajectory tasks) 
-
-    def __init__(self,
-                 vocab_size = None,
-                 n_layers = 6,
-                 n_heads = 8,
-                 d_model = 512,
-                 d_filter = 2048,
-                 dropout = None,
-                 embedding_initializer=None,
-                 **kwargs) -> None:
-        super().__init__(**kwargs)
-
-        self.vocab_size = vocab_size
-
-        self.n_layers = n_layers
-        self.n_heads = n_heads
-        self.d_model = d_model
-        self.d_filter = d_filter
-        self.dropout_weight = 0 if dropout is None else dropout
-
-        input_embedding = TransformerInputEmbedding(d_model, vocab_size) # , embedding_initializer=embedding_initializer
-
-        output_layer = EmbeddingTranspose(input_embedding.embedding)
-
-        # Build the encoder stack.
-        self.encoder = TransformerEncoder(input_embedding, n_layers, n_heads, d_model, d_filter, dropout)
-
-        # Build the decoder stack.
-        self.decoder = TransformerDecoder(input_embedding, output_layer, n_layers, n_heads, d_model, d_filter, dropout)
-
-    def forward(self, source_sequence, target_sequence, encoder_mask, decoder_mask, mask_future=True, shift_target_sequence_right=True):
-
-        # Unpack the source and target sequences from the encoder.
-        # Source Sequence: [batch_size x source_length]
-        # Target Sequence: [batch_size x target_length]
-        #
-        # Generate the masks for the encoder and decoder. There are a lot of different ways that
-        # the attention masks could be passed in, so this method handles a lot of these different
-        # mask shapes.
-        encoder_mask = transformer_utils.convert_to_attention_mask(source_sequence, encoder_mask)
-        decoder_mask = transformer_utils.convert_to_attention_mask(target_sequence, decoder_mask)
-
-        # After the end of the encoder and decoder generation phase, we have
-        # Encoder Mask: [batch_size x source_length x source_length]
-        # Decoder Mask: [batch_size x target_length x target_length]
-
-        # Next, we perform the encoding of the sentence. This should take
-        # as input a tensor of shape [batch_size x source_length x input_feature_shape]
-        # and generate a tensor of shape [batch_size x source_length x d_model]
-
-        # Using the self.encoder, encode the source_sequence, and provide the encoder_mask variable as the optional mask.
-        encoder_output = self.encoder(source_sequence, encoder_mask=encoder_mask)
-
-        # Finally, we need to do a decoding this should generate a
-        # tensor of shape [batch_size x target_length x d_model]
-        # from the encoder output.
-        decoder_output = self.decoder(target_sequence, encoder_output, encoder_mask=encoder_mask, decoder_mask=decoder_mask,
-                                    mask_future=mask_future, shift_target_sequence_right=shift_target_sequence_right)
-
-        return decoder_output # We return the decoder's output
-
-class TransformerTrainer(nn.Module): # Transformer Trainer (not used for trajectory task)
-    def __init__(self, vocab_size, d_model, input_length, output_length, n_layers, d_filter, dropout=0, learning_rate=1e-3):
-        super().__init__()
-        self.model = Transformer(vocab_size=vocab_size, d_model=d_model, n_layers=n_layers, d_filter=d_filter)
-
-        # Summarization loss
-        criterion = nn.CrossEntropyLoss(reduce='none')
-        self.loss_fn = lambda pred,target,mask: (criterion(pred.permute(0,2,1),target)*mask).sum()/mask.sum()
-        self.learning_rate = learning_rate
-        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
-    
-    def forward(self,batch,optimize=True):
-        target,mask = batch['target_sequence'],batch['decoder_mask']
-        if self.performer:
-            _, pred_logits = self.model(**batch)
-            target = target[:,1:]
-            mask = mask[:, 1:]
-        else:
-            pred_logits = self.model(**batch)
-        
-        loss = self.loss_fn(pred_logits,target,mask)
-        accuracy = (torch.eq(pred_logits.argmax(dim=2,keepdim=False),target).float()*mask).sum()/mask.sum()
-        
-        if optimize:
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-                
-        return loss, accuracy
