@@ -1,4 +1,7 @@
 import numpy as np
+import scipy as sp
+from scipy.spatial.transform import Rotation
+
 rng = np.random.default_rng()
 
 def generate_traj(num_traj, T, A, B, C, Q, R, x0, u_seq, state_dim=None, input_dim=None, obs_dim=None):
@@ -22,7 +25,7 @@ def generate_traj(num_traj, T, A, B, C, Q, R, x0, u_seq, state_dim=None, input_d
             meas[traj_index, i] = y
     return traj, meas
 
-# TODO: make this more configurable later. B, Q, R should not be fixed, speed should not be 1deg/sec
+# TODO: make all of these more configurable. Ex. B, Q, R should not be fixed, speed should not be 1deg/sec
 def circular_traj_params(state_dim=2, input_dim=1, obs_dim=2):
     # Generate trajectories that follow a fixed path on the unit circle
     # returns: A, B, C, Q, R, x0, u_seq, traj, meas
@@ -38,7 +41,6 @@ def circular_traj_params(state_dim=2, input_dim=1, obs_dim=2):
     x0 = np.array([1.0, 0.0], dtype=np.float64) # starting state
     return A, B, C, Q, R, x0
 
-
 def motion_traj_params(state_dim=2, input_dim=1, obs_dim=1):
     # Generate trajectories that traveling with a constant velocity
     # Only the position is observed.
@@ -53,5 +55,14 @@ def motion_traj_params(state_dim=2, input_dim=1, obs_dim=1):
     x0 = np.array([0.0, 0.0], dtype=np.float64) 
     return A, B, C, Q, R, x0
 
+def so3_params(state_dim=3, input_dim=1, obs_dim=3):
+    theta =  1/360*2*np.pi # one degree
+    A = Rotation.from_rotvec(np.array([1/np.sqrt(3), 1/np.sqrt(3), 1/np.sqrt(3)]) * theta).as_matrix() # along axis in middle of quadrant I
+    B = np.array([[0], [0], [1]])
+    C = np.eye(3)
+    Q = 0.001*np.eye(state_dim)
+    R = 0.01*np.eye(obs_dim)
+    x0=np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    return A, B, C, Q, R, x0
 
 
