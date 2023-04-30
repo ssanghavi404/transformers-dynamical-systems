@@ -4,6 +4,7 @@ from scipy.spatial.transform import Rotation
 
 rng = np.random.default_rng()
 
+# Given the system parameters and timelength, generate num_traj trajectories
 def generate_traj(num_traj, T, A, B, C, Q, R, x0, u_seq, state_dim=None, input_dim=None, obs_dim=None):
     if state_dim is None: state_dim = A.shape[0]
     if input_dim is None: input_dim = B.shape[1]
@@ -25,25 +26,26 @@ def generate_traj(num_traj, T, A, B, C, Q, R, x0, u_seq, state_dim=None, input_d
             meas[traj_index, i] = y
     return traj, meas
 
-# TODO: make all of these more configurable. Ex. B, Q, R should not be fixed, speed should not be 1deg/sec
-def circular_traj_params(state_dim=2, input_dim=1, obs_dim=2):
-    # Generate trajectories that follow a fixed path on the unit circle
-    # returns: A, B, C, Q, R, x0, u_seq, traj, meas
+# 2d rotation around a circle
+def circular_traj_params():
     theta = 1/360*2*np.pi # one degree
-
+    state_dim = 2
+    input_dim = 1
+    obs_dim = 2
     A = np.array([[np.cos(theta), -np.sin(theta)], # state transition matrix
                 [np.sin(theta),  np.cos(theta)]]) # moving around a circle at 1 deg per timestep
     B = np.array([[0.5], [0.7]]) # input transformation
-    # B = np.zeros(shape=(state_dim, input_dim)) # ignore inputs for now
     C = np.eye(obs_dim, state_dim) # Using identity map for now
     Q = 0.001*np.eye(state_dim) # Covariance matrix of process noise
     R = 0.01*np.eye(obs_dim) # Covariance matrix of sensor noise
     x0 = np.array([1.0, 0.0], dtype=np.float64) # starting state
-    return A, B, C, Q, R, x0
+    return A, B, C, Q, R, x0, state_dim, input_dim, obs_dim
 
-def motion_traj_params(state_dim=2, input_dim=1, obs_dim=1):
-    # Generate trajectories that traveling with a constant velocity
-    # Only the position is observed.
+# Traveling with a constant velocity that can be driven, only the position is observed.
+def motion_traj_params():
+    state_dim = 2
+    input_dim = 1
+    obs_dim = 1
     dt = 1e-3
     A = np.array([[1, dt], 
                   [0, 1]])
@@ -53,16 +55,43 @@ def motion_traj_params(state_dim=2, input_dim=1, obs_dim=1):
                 [0, 1]])
     R = np.array([[0.4]])
     x0 = np.array([0.0, 0.0], dtype=np.float64) 
-    return A, B, C, Q, R, x0
+    return A, B, C, Q, R, x0, state_dim, input_dim, obs_dim
 
-def so3_params(state_dim=3, input_dim=1, obs_dim=3):
-    theta =  1/360*2*np.pi # one degree
-    A = Rotation.from_rotvec(np.array([1/np.sqrt(3), 1/np.sqrt(3), 1/np.sqrt(3)]) * theta).as_matrix() # along axis in middle of quadrant I
+def so3_params():
+    theta =  1/360*2*np.pi # one degree per timestep
+    state_dim = 3
+    input_dim = 1
+    obs_dim = 3
+
+    # Rotating along axis in middle of quadrant I
+    A = Rotation.from_rotvec(np.array([1/np.sqrt(3), 1/np.sqrt(3), 1/np.sqrt(3)]) * theta).as_matrix() 
     B = np.array([[0], [0], [1]])
-    C = np.eye(3)
+    C = np.eye(state_dim)
     Q = 0.001*np.eye(state_dim)
     R = 0.01*np.eye(obs_dim)
     x0=np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    return A, B, C, Q, R, x0
+    return A, B, C, Q, R, x0, state_dim, input_dim, obs_dim
 
+# Falling with constant acceleration. Velocity can be driven. Only position is observed.
+# Process noise only affects the velocity. Sensor noise on the position.
+def accel_traj_params():
+    state_dim = 3
+    input_dim = 1
+    obs_dim = 1
+    dt = 1e-3
+    A = np.array([[1, dt, 0], 
+                  [0, 1, dt], 
+                  [0, 0, 1]])
+    B = np.array([[0], [1], [0]])
+    C = np.array([[1, 0, 0]])
+    Q = 0.001 * np.eye(state_dim)
+    R = 0.1 * np.eye(obs_dim)
+    x0 = np.array([20, 0, -10]) # start x = 20, a = -10
+    return A, B, C, Q, R, x0, state_dim, input_dim, obs_dim
 
+sys_params = {
+    'circular': circular_traj_params(),
+    'motion': motion_traj_params(),
+    'so3': so3_params(),
+    'accel': accel_traj_params()
+}
