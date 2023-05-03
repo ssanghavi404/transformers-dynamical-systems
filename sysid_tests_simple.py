@@ -1,5 +1,8 @@
-# System Identification Tests. Credit: Aleksander Haber, 
+# System Identification in the General Case. Credit: Aleksander Haber, 
 # https://github.com/AleksandarHaber/Subspace-Identification-State-Space-System-Identification-of-Dynamical-Systems-and-Time-Series-/blob/master/
+
+import numpy as np
+import matplotlib.pyplot as plt
 
 ###############################################################################
 # This function estimates the Markov parameters of the state-space model:
@@ -19,12 +22,7 @@
 # "Z_0_pm1_l" - data matrix used to estimate the Markov parameters,
 # this is an input parameter for the "estimateModel()" function
 # "Y_p_p_l" is the right-hand side 
-
-
 def estimateMarkovParameters(U,Y,past):
-    import numpy as np
-    import scipy 
-    from scipy import linalg
     
     timeSteps=U.shape[1]
     m=U.shape[0]
@@ -46,15 +44,9 @@ def estimateMarkovParameters(U,Y,past):
             Z_0_pm1_l[i*(m+r):i*(m+r)+m,j]=U[:,i+j]
             Z_0_pm1_l[i*(m+r)+m:i*(m+r)+m+r,j]=Y[:,i+j]
         Y_p_p_l[:,j]=Y[:,j+past]
-        # numpy.linalg.lstsq
-        #M_pm1=scipy.linalg.lstsq(Z_0_pm1_l.T,Y_p_p_l.T)
-        M_pm1=np.matmul(Y_p_p_l,linalg.pinv(Z_0_pm1_l))
+        M_pm1=np.matmul(Y_p_p_l,np.linalg.pinv(Z_0_pm1_l))
     
     return M_pm1, Z_0_pm1_l, Y_p_p_l
-###############################################################################
-# end of function
-###############################################################################
-
 
 
 ###############################################################################
@@ -78,11 +70,7 @@ def estimateMarkovParameters(U,Y,past):
 # the matrices: A,Acl,B,K,C
 # s_singular - singular values of the matrix used to estimate the state-sequence
 # X_p_p_l   - estimated state sequence    
-    
-    
 def estimateModel(U,Y,Markov,Z_0_pm1_l,past,future,order_estimate):
-    import numpy as np
-    from scipy import linalg
     
     timeSteps=U.shape[1]
     m=U.shape[0]
@@ -93,8 +81,6 @@ def estimateModel(U,Y,Markov,Z_0_pm1_l,past,future,order_estimate):
     Qpm1=np.zeros(shape=(future*r,past*(m+r)))
     for i in range(future):
         Qpm1[i*r:(i+1)*r,i*(m+r):]=Markov[:,:(m+r)*(past-i)]
-    
-    
     
     # estimate the state sequence
     Qpm1_times_Z_0_pm1_l=np.matmul(Qpm1,Z_0_pm1_l)
@@ -121,14 +107,8 @@ def estimateModel(U,Y,Markov,Z_0_pm1_l,past,future,order_estimate):
     Acl=ABK[0:n,0:n]
     B=ABK[0:n,n:n+m]  
     K=ABK[0:n,n+m:n+m+r]  
-    A=Acl+np.matmul(K,C)
-    
-    
+    A=Acl+np.matmul(K,C)    
     return A,Acl,B,K,C,s_singular,X_p_p_l
-###############################################################################
-# end of function
-###############################################################################
-
 
 ###############################################################################
 # This function simulates an open loop state-space model:
@@ -142,9 +122,7 @@ def estimateModel(U,Y,Markov,Z_0_pm1_l,past,future,order_estimate):
 # Output parameters:
 # Y - simulated output - dimensions \in \mathbb{R}^{r \times simSteps}, where r is the output vector dimension
 # X - simulated state - dimensions  \in \mathbb{R}^{n \times simSteps}, where n is the state vector dimension
-
 def systemSimulate(A,B,C,U,x0):
-    import numpy as np
     simTime=U.shape[1]
     n=A.shape[0]
     r=C.shape[0]
@@ -162,10 +140,6 @@ def systemSimulate(A,B,C,U,x0):
     return Y,X
 
 ###############################################################################
-# end of function
-###############################################################################    
-
-###############################################################################
 # This function estimates an initial state x_{0} of the model
 # x_{k+1} = A x_{k} + B u_{k}
 # y_{k}   = C x_{k}
@@ -179,7 +153,6 @@ def systemSimulate(A,B,C,U,x0):
 # Output parameters:
 # "x0_est"
 def estimateInitial(A,B,C,U,Y,h):
-    import numpy as np
     n=A.shape[0]
     r=C.shape[0]
     m=U.shape[0]
@@ -206,9 +179,6 @@ def estimateInitial(A,B,C,U,Y,h):
     x0_est=np.matmul(np.linalg.pinv(O_hm1),Y_0_hm1-np.matmul(I_hm1,U_0_hm1))
     return x0_est
 
-###############################################################################
-# end of function
-###############################################################################
     
 ###############################################################################
 #   This function computes the prediction performances of estimated models
@@ -217,8 +187,6 @@ def estimateInitial(A,B,C,U,Y,h):
 #   - "Ypredicted" - output predicted by the model: number of system outputs X time samples
 ###############################################################################
 def modelError(Ytrue,Ypredicted,r,m,n):
-    import numpy as np
-    from numpy import linalg as LA
     r=Ytrue.shape[0]
     timeSteps=Ytrue.shape[1]
     total_parameters=n*(n+m+2*r)
@@ -230,95 +198,14 @@ def modelError(Ytrue,Ypredicted,r,m,n):
     Ypredicted=Ypredicted.reshape((r*timeSteps,1))
     error=Ytrue-Ypredicted
     
-    relative_error_percentage=(LA.norm(error,2)/LA.norm(Ytrue,2))*100
+    relative_error_percentage=(np.linalg.norm(error,2)/np.linalg.norm(Ytrue,2))*100
     
-    vaf_error_percentage = (1 - ((1/timeSteps)*LA.norm(error,2)**2)/((1/timeSteps)*LA.norm(Ytrue,2)**2))*100
+    vaf_error_percentage = (1 - ((1/timeSteps)*np.linalg.norm(error,2)**2)/((1/timeSteps)*np.linalg.norm(Ytrue,2)**2))*100
     vaf_error_percentage=np.maximum(vaf_error_percentage,0)
     cov_matrix=(1/(timeSteps))*np.matmul(error_matrix,error_matrix.T)
     Akaike_error=np.log(np.linalg.det(cov_matrix))+(2/timeSteps)*(total_parameters)
     
     return relative_error_percentage, vaf_error_percentage, Akaike_error
-
-###############################################################################
-#                   Residual test
-###############################################################################
-
-def whiteTest(Ytrue,Ypredicted):
-    import numpy as np
-
-    r=Ytrue.shape[0]
-    timeSteps=Ytrue.shape[1]
-    l=timeSteps-10  # l is the total number of autocovariance and autocorrelation matrices
-    
-    error_matrix=Ytrue-Ypredicted
-    
-    # estimate the mean
-    error_mean=np.zeros(shape=(r,1))
-    for i in range(timeSteps):
-        error_mean=error_mean+(error_matrix[:,[i]])
-    error_mean=(1/timeSteps)*error_mean
-    
-    #estimate the autocovariance and autocorrelation matrices (there are two ways, I use the longer one for clarity)
-    auto_cov_matrices=[]
-    auto_corr_matrices=[]
-    
-    for i in range(l):
-        tmp_matrix=np.zeros(shape=(r,r))
-        for j in np.arange(i,timeSteps):
-            tmp_matrix=tmp_matrix+np.matmul(error_matrix[:,[j]]-error_mean,(error_matrix[:,[j-i]]-error_mean).T)
-        tmp_matrix=(1/timeSteps)*tmp_matrix
-        auto_cov_matrices.append(tmp_matrix)
-        if i==0:
-            diag_matrix=np.sqrt(np.diag(np.diag(tmp_matrix)))
-            diag_matrix=np.linalg.inv(diag_matrix)
-        tmp_matrix_corr=np.matmul(np.matmul(diag_matrix,tmp_matrix),diag_matrix)
-        auto_corr_matrices.append(tmp_matrix_corr)    
-    return auto_corr_matrices       
-
-###############################################################################
-#               Portmanteau test
-###############################################################################
-    
-def portmanteau(Ytrue,Ypredicted,m_max):
-    import numpy as np
-    from scipy import stats
-
-    r=Ytrue.shape[0]
-    timeSteps=Ytrue.shape[1]
-    l=timeSteps-10  # l is the total number of autocovariance and autocorrelation matrices
-    
-    error_matrix=Ytrue-Ypredicted
-    
-    # estimate the mean
-    error_mean=np.zeros(shape=(r,1))
-    for i in range(timeSteps):
-        error_mean=error_mean+(error_matrix[:,[i]])
-    error_mean=(1/timeSteps)*error_mean
-    
-    #estimate the autocovariance (there are two ways, I use the longer one for clarity)
-    auto_cov_matrices=[]
-        
-    for i in range(l):
-        tmp_matrix=np.zeros(shape=(r,r))
-        for j in np.arange(i,timeSteps):
-            tmp_matrix=tmp_matrix+np.matmul(error_matrix[:,[j]]-error_mean,(error_matrix[:,[j-i]]-error_mean).T)
-        tmp_matrix=(1/timeSteps)*tmp_matrix
-        auto_cov_matrices.append(tmp_matrix)
-    
-    Q=[]
-    p_value=[]
-    for i in np.arange(1,m_max+1):
-        sum=0
-        for j in np.arange(1,i+1):
-            sum=sum+(1/(timeSteps-j))*np.trace(np.matmul(auto_cov_matrices[j].T,np.matmul(np.linalg.inv(auto_cov_matrices[0]),np.matmul(auto_cov_matrices[j],np.linalg.inv(auto_cov_matrices[0])))))
-        Qtmp=(timeSteps**2)*sum
-        p_value.append(1-stats.chi2.cdf(Qtmp, (r**2)*i))
-        Q.append(Qtmp)
-    return Q, p_value   
-
-
-
-
 
 ###############################################################################
 # This function estimates an initial state x_{0} of the model
@@ -334,7 +221,6 @@ def portmanteau(Ytrue,Ypredicted,m_max):
 # Output parameters:
 # "x0_est"
 def estimateInitial_K(Atilde,B,C,K,U,Y,h):
-    import numpy as np
     
     Btilde=np.block([B,K])
     Btilde=np.asmatrix(Btilde)
@@ -371,11 +257,6 @@ def estimateInitial_K(Atilde,B,C,K,U,Y,h):
   
     x0_est=np.matmul(np.linalg.pinv(O_hm1),Y_0_hm1-np.matmul(I_hm1,Z_0_hm1))
     return x0_est
-###############################################################################
-# end of function
-###############################################################################
-
-
 
 ###############################################################################
 # This function performs an open-loop simulation of the state-space model:
@@ -390,9 +271,7 @@ def estimateInitial_K(Atilde,B,C,K,U,Y,h):
 # Output parameters:
 # Y - simulated output - dimensions \in \mathbb{R}^{r \times simSteps}, where r is the output vector dimension
 # X - simulated state - dimensions  \in \mathbb{R}^{n \times simSteps}, where n is the state vector dimension
-
 def systemSimulate_Kopen(Atilde,B,C,K,U,x0,y0):
-    import numpy as np
     simTime=U.shape[1]
     n=Atilde.shape[0]
     r=C.shape[0]
@@ -410,12 +289,6 @@ def systemSimulate_Kopen(Atilde,B,C,K,U,x0,y0):
     return Y,X
 
 ###############################################################################
-# end of function
-###############################################################################    
-
-
-
-###############################################################################
 # This function a closed-loop simulation of the state-space model:
 # x_{k+1} = Atilde x_{k} + B u_{k} +K y_{k}
 # y_{k}   = C x_{k}
@@ -429,9 +302,7 @@ def systemSimulate_Kopen(Atilde,B,C,K,U,x0,y0):
 # Output parameters:
 # Y - simulated output - dimensions \in \mathbb{R}^{r \times simSteps}, where r is the output vector dimension
 # X - simulated state - dimensions  \in \mathbb{R}^{n \times simSteps}, where n is the state vector dimension
-
 def systemSimulate_Kclosed(Atilde,B,C,K,U,Ymeas,x0):
-    import numpy as np
     simTime=U.shape[1]
     n=Atilde.shape[0]
     r=C.shape[0]
@@ -448,6 +319,84 @@ def systemSimulate_Kclosed(Atilde,B,C,K,U,Ymeas,x0):
     
     return Y,X
 
-###############################################################################
-# end of function
-###############################################################################    
+# test function for fourth order system example. 
+def main():
+    # define the system parameters
+    m1=20  ; m2=20   ; k1=1000  ; k2=2000 ; d1=1  ; d2=5; 
+
+
+    # define the continuous-time system matrices
+    Ac=np.matrix([[         0,             1,      0,      0],
+                [-(k1+k2)/m1 ,  -(d1+d2)/m1 , k2/m1 , d2/m1 ], 
+                [           0 ,            0 ,      0 ,     1], 
+                [       k2/m2,          d2/m2, -k2/m2, -d2/m2]])
+    Bc=np.matrix([[0],[0],[0],[1/m2]])
+    Cc=np.matrix([[1, 0, 0, 0]])
+
+    ###############################################################################
+    # parameter definition
+
+    r=1; m=1 # number of inputs and outputs
+    # total number of time samples
+    time=300
+    # discretization constant
+    sampling=0.05
+
+    # model discretization
+    I=np.identity(Ac.shape[0]) 
+    A=np.linalg.inv(I-sampling*Ac)
+    B=A*sampling*Bc
+    C=Cc
+
+    # define an input sequence and initial state for the identification
+    input_ident=np.random.rand(1,time)
+    x0_ident=np.random.rand(4,1)
+
+    #define an input sequence and initial state for the validation
+    input_val=input_ident
+    # x0_val=x0_ident
+
+    # simulate the discrete-time system to obtain the input-output data for identification and validation
+    Y_ident, X_ident=systemSimulate(A,B,C,input_ident,x0_ident)
+    # Y_val, X_val=systemSimulate(A,B,C,input_val,x0_val)
+
+    #  end of parameter definition
+    ###############################################################################
+
+    ###############################################################################
+    # model estimation and validation
+
+    # estimate the Markov parameters
+    past_value=10 # this is the past window - p 
+    Markov, Z, Y_p_p_l = estimateMarkovParameters(input_ident ,Y_ident,past_value)
+
+    # estimate the system matrices
+    for model_order in range(6):
+        print("Model Order", model_order)
+        Aid,Atilde,Bid,Kid,Cid,s_singular,X_p_p_l = estimateModel(input_ident,Y_ident,Markov,Z,past_value,past_value,model_order)  
+
+        # estimate the initial state of the validation data
+        h=10 # window for estimating the initial state
+        # x0est=estimateInitial(Aid,Bid,Cid,input_val,Y_val,h)
+
+        # # simulate the open loop model 
+        # # Y_val_prediction, X_val_prediction = systemSimulate(Aid,Bid,Cid,input_val,x0est)
+        
+        # What happens if we apply the learned system to the ORIGINAL (ident) data? 
+        x0est = estimateInitial(Aid, Bid, Cid, input_ident, Y_ident, h)
+        Y_ident_prediction, X_ident_prediction = systemSimulate(Aid,Bid,Cid,input_ident,x0est)
+
+        # compute the errors
+        relative_error_percentage, vaf_error_percentage, Akaike_error = modelError(Y_ident,Y_ident_prediction,r,m,30)
+        print('Final model relative error %f and VAF value %f' %(relative_error_percentage, vaf_error_percentage))
+
+        # plot the prediction and the real output 
+        plt.plot(Y_ident[0,:100],'k',label='Real output')
+        plt.plot(Y_ident_prediction[0,:100],'r',label='Prediction')
+        plt.legend()
+        plt.xlabel('Time steps')
+        plt.ylabel('Predicted and real outputs')
+        plt.show()
+
+if __name__ == "__main__":
+    main()

@@ -50,7 +50,7 @@ def motion_traj_params():
     A = np.array([[1, dt], 
                   [0, 1]])
     B = np.array([[0], [1]])
-    C = np.array([[1, 0]])
+    C = np.array([[1, 0]]) # only observe the first hidden state
     Q = np.array([[0, 0], 
                 [0, 1]])
     R = np.array([[0.4]])
@@ -89,9 +89,33 @@ def accel_traj_params():
     x0 = np.array([20, 0, -10]) # start x = 20, a = -10
     return A, B, C, Q, R, x0, state_dim, input_dim, obs_dim
 
+def spring_mass_damper_traj_params():
+    state_dim = 2
+    input_dim = 1
+    obs_dim = 1
+    m = 1 # Mass
+    k = 1 # Spring Constant
+    b = 0.2 # Damping
+    Ac = np.array([[ 0.0, 1.0], 
+                   [-k/m, -b/m]])
+    Bc = np.array([[0.0], [1/m]])
+    Cc = np.array([[1.0, 0.0]])
+    Q = 0.0001 * np.eye(state_dim)
+    R = 0.01 * np.eye(obs_dim)
+    x0 = np.array([1.0, 0.0])
+
+    # model discretization
+    sampling = 0.05 # sampling interval
+    A = np.linalg.inv(np.eye(state_dim) - sampling*Ac)
+    B = sampling * A @ Bc
+    C = Cc
+
+    return A, B, C, Q, R, x0, state_dim, input_dim, obs_dim
+
 sys_params = {
     'circular': circular_traj_params(),
     'motion': motion_traj_params(),
     'so3': so3_params(),
-    'accel': accel_traj_params()
+    'accel': accel_traj_params(),
+    'spring_mass_damper': spring_mass_damper_traj_params(),
 }
