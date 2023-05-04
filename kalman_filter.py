@@ -3,6 +3,8 @@ import copy
 import numpy as np
 import torch
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 class KFilter:
     def __init__(self, A, B, C, Q, R, state=None):
         self.A = A
@@ -73,16 +75,16 @@ class LearnedKFilter:
     def __init__(self, state_dim, input_dim, obs_dim=None, x0=None): # obs_dim as a parameter
         if obs_dim is None: obs_dim = state_dim
 
-        self.Aprime = torch.eye(state_dim, state_dim, requires_grad=True) # to be learned
-        self.Bprime = torch.zeros(state_dim, input_dim, requires_grad=True) # to be learned
-        self.Gprime = torch.zeros(state_dim, obs_dim, requires_grad=True) # to be learned
-        self.Cprime = torch.eye(obs_dim, state_dim, requires_grad=True) # to be learned? Give it a try. #
+        self.Aprime = torch.eye(state_dim, state_dim, requires_grad=True).to(device) # to be learned
+        self.Bprime = torch.zeros(state_dim, input_dim, requires_grad=True).to(device) # to be learned
+        self.Gprime = torch.zeros(state_dim, obs_dim, requires_grad=True).to(device) # to be learned
+        self.Cprime = torch.eye(obs_dim, state_dim, requires_grad=True).to(device) # to be learned
 
         self.state_size = state_dim
         self.input_size = input_dim
         self.obs_size = obs_dim
         
-        self.starting_state = torch.from_numpy(x0) if x0 is not None else torch.zeros(state_dim, requires_grad=True)
+        self.starting_state = (torch.from_numpy(x0) if x0 is not None else torch.zeros(state_dim, requires_grad=True)).to(device)
 
         self.loss_func = torch.nn.MSELoss()
         self.optimizer = torch.optim.Adam([self.Aprime, self.Bprime, self.Gprime], lr=1e-3)  # self.Cprime (decoder) is learnable? Not for now.
@@ -106,25 +108,29 @@ class LearnedKFilter:
                 self.Gprime @ measurement
         return nextState
 
-    def fit(self, measurements, inputs=None, eps=4, maxIt=500):
+    def fit(self, meas, u_seq=None, eps=4, maxIt=500):
         '''Learn the Kalman Filter's parameters (A', B', G') from a single sequence of measurements in inputs
             Given KF dynamics   
                 xhat_tp1 = A (I - K C) xhat_t + B u_t + A K y_t
             Learns the Kalman update parameters
                 A' = A (I - K C) and B' = B and G' = A K
             from given measurements and inputs'''
-        T = measurements.shape[0]
+        T = meas.shape[0]
+        meas_torch = torch.tensor(meas, requires_grad=False)
+        if u_seq is None: u_seq = np.zeros(shape=(T, self.input_size))
+        u_torch = torch.tensor(u_seq, requires_grad=False)
+
         curr_loss = float('inf')
         i = 1
         while curr_loss > eps and i < maxIt:
             seq_loss = None
             curr_estimate = self.starting_state
             if i % 1000 == 0: print('Iteration', i, ": Loss", curr_loss)
+            # print('Iteration', i, ": Loss", curr_loss)
             for t in range(T-1):
-                next_estimate = self.predict(curr_estimate, torch.tensor(measurements[t], requires_grad=False), torch.tensor(inputs[t], requires_grad=False) if inputs is not None else None)
-                
+                next_estimate = self.predict(curr_estimate, meas_torch[t], u_torch[t] if u_seq is not None else None)
                 next_obs_estimate = self.Cprime @ next_estimate
-                target = torch.tensor(measurements[t+1], requires_grad=False)
+                target = meas_torch[t+1]
                 curr_loss = self.loss_func(next_obs_estimate, target)
                 if seq_loss is None: seq_loss = curr_loss
                 else: seq_loss += curr_loss
@@ -134,7 +140,7 @@ class LearnedKFilter:
             seq_loss.backward()
             self.optimizer.step()
 
-            i += 1 
+            i += 1
             curr_loss = seq_loss.item()
             self.losses.append(curr_loss)
            
@@ -148,14 +154,12 @@ class LearnedKFilter:
             curr_state = next_state
         return states
 
-
-# OLD 
 # Helper function to perform system identification. Works for systems where the C is assumed to be the identity (outputs are noisy direct measurements of the input states).
-def system_id(measurements, t, x0=0, inputs=None):
+def system_id(meas, t, x0=0, inputs=None):
     '''system_id(measurement_data, t, starting_state, inputs_data) -> A, B
     Performs system identification using the first t timesteps of data.
     B will be None if inputs is None.'''
-    state_dim = measurements[0].shape[0]
+    state_dim = meas[0].shape[0]
     input_dim = 0 if inputs is None else inputs.shape[1]
     M = np.zeros(shape=(t*state_dim, state_dim*(state_dim+input_dim)), dtype=np.float64)
     c = np.zeros(shape=(t*state_dim, 1))
@@ -163,8 +167,8 @@ def system_id(measurements, t, x0=0, inputs=None):
     for i in range(t):
         for n in range(state_dim):
             row = i*state_dim + n
-            c[row] = measurements[i, n] 
-            M[row, n*state_dim:(n+1)*state_dim] = measurements[i-1] if i > 0 else x0
+            c[row] = meas[i, n] 
+            M[row, n*state_dim:(n+1)*state_dim] = meas[i-1] if i > 0 else x0
             if inputs is not None: 
                 M[row, state_dim*state_dim + n*input_dim : state_dim*state_dim + (n+1)*input_dim] = inputs[i]
 
@@ -174,16 +178,36 @@ def system_id(measurements, t, x0=0, inputs=None):
     return A_found, B_found
 
 
-##############################################################################################################################################################################################################################
-from sysid_tests_simple import *
+import cvxpy as cp
 
-def sys_id(measurements, inputs, model_order=2, window=10):
-    U = inputs.T
-    Y = measurements.T
-    past = window # How many of the past timesteps to use?
-    future = window
-    Markov, Z, Y_p_p_l = estimateMarkovParameters(U, Y, past)
-    Aid, Atilde, Bid, Kid, Cid, s_singular, X_p_p_l = estimateModel(U,Y,Markov,Z,past,future,model_order)  
-    return Aid, Bid, Cid, X_p_p_l
+# Helper function to optimize estimator. 
+def optimal_traj(A, B, C, Q, R, meas, x0, xf, u_seq):
+    Qinv = np.linalg.inv(Q)
+    Rinv = np.linalg.inv(R)
+    state_dim = A.shape[0]
+    T = meas.shape[0]
 
-### THE ABOVE SYSID CODE IS NOT WORKING RIGHT NOW, try to debug it later
+    # Least Squares Optimization with CVX: Minimum Energy Noise
+    xs = cp.Variable((T-1, state_dim))
+
+    # Set up the objective function
+    obj = 0
+    
+    for i in range(1, T-1): # Note - we don't need to go to the last state since reverse Kalman Filter knows the last state.
+        w_hyp = xs[i, :].T - A @ xs[i-1, :].T - B @ u_seq[i]
+        obj += cp.quad_form(w_hyp, Qinv) # Minimize process noise
+    for i in range(T-1):
+        v_hyp = meas[i, :] - C @ xs[i, :].T
+        obj += cp.quad_form(v_hyp, Rinv) # Minimize sensor noises cp.sum_squares
+    
+    w_hyp0 = xs[0, :] - A @ x0 - B @ u_seq[0] # Special handling for the first state (known)
+    obj += cp.quad_form(w_hyp0, Qinv) 
+
+    w_hypf = (xf - A @ xs[T-2, :].T - B @ u_seq[0]) # Special handling for final state (known since it's provided to LearnedKF)
+    obj += cp.quad_form(w_hypf, Qinv)
+
+    prob = cp.Problem(cp.Minimize(obj))
+    prob.solve()
+    ls_rec = xs.value
+    traj_rec = np.vstack((ls_rec, xf))
+    return traj_rec
