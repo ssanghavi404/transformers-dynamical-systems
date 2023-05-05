@@ -112,23 +112,10 @@ def spring_mass_damper_traj_params():
 
     return A, B, C, Q, R, x0, state_dim, input_dim, obs_dim
 
-def identity_params():
-    A = np.array([[1]])
-    B = np.array([[0]])
-    C = np.array([[1]])
-    Q = np.array([[1]])
-    R = np.array([[1]])
-    x0 = np.array([1])
-    state_dim = 1
-    input_dim = 0
-    obs_dim = 1
-    return A, B, C, Q, R, x0, state_dim, input_dim, obs_dim
-
 sys_params = {
-    'identity': identity_params(),
-    'circular': circular_traj_params(),
+    'so2': circular_traj_params(),
     'motion': motion_traj_params(),
     'so3': so3_params(),
     'accel': accel_traj_params(),
-    'spring_mass_damper': spring_mass_damper_traj_params(),
+    'smd': spring_mass_damper_traj_params(),
 }
