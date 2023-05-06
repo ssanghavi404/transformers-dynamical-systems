@@ -3,7 +3,7 @@ import copy
 import numpy as np
 import torch
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+myDevice = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class KFilter:
     def __init__(self, A, B, C, Q, R, state=None):
@@ -75,28 +75,22 @@ class LearnedKFilter:
     def __init__(self, state_dim, input_dim, obs_dim=None, x0=None): # obs_dim as a parameter
         if obs_dim is None: obs_dim = state_dim
 
-        self.Aprime = torch.eye(state_dim, state_dim, requires_grad=True).to(device) # to be learned
-        self.Bprime = torch.zeros(state_dim, input_dim, requires_grad=True).to(device) # to be learned
-        self.Gprime = torch.zeros(state_dim, obs_dim, requires_grad=True).to(device) # to be learned
-        self.Cprime = torch.eye(obs_dim, state_dim, requires_grad=True).to(device) # to be learned
+        self.Aprime = torch.eye(state_dim, state_dim, requires_grad=True, device=myDevice) # to be learned
+        self.Bprime = torch.zeros(state_dim, input_dim, requires_grad=True, device=myDevice) # to be learned
+        self.Gprime = torch.zeros(state_dim, obs_dim, requires_grad=True, device=myDevice) # to be learned
+        self.Cprime = torch.eye(obs_dim, state_dim, requires_grad=True, device=myDevice) # to be learned
 
         self.state_size = state_dim
         self.input_size = input_dim
         self.obs_size = obs_dim
         
-        self.starting_state = (torch.from_numpy(x0) if x0 is not None else torch.zeros(state_dim, requires_grad=True)).to(device)
+        self.starting_state = (torch.from_numpy(x0) if x0 is not None else torch.zeros(state_dim, requires_grad=True)).to(myDevice)
 
         self.loss_func = torch.nn.MSELoss()
-        self.optimizer = torch.optim.Adam([self.Aprime, self.Bprime, self.Gprime], lr=1e-3)  # self.Cprime (decoder) is learnable? Not for now.
+        self.optimizer = torch.optim.Adam([self.Aprime, self.Bprime, self.Cprime, self.Gprime], lr=1e-3) 
         self.losses = []
 
     def predict(self, curr_state, measurement, u=None):
-        # print("Aprime is", self.Aprime)
-        # print("Bprime is", self.Bprime)
-        # print("Gprime is", self.Gprime)
-        # print("curr_state is", curr_state)
-        # print("measurement is", measurement)
-        # print("u is", u)
         if u is None: 
             nextState = \
                 self.Aprime @ curr_state + \
@@ -126,7 +120,6 @@ class LearnedKFilter:
             seq_loss = None
             curr_estimate = self.starting_state
             if i % 1000 == 0: print('Iteration', i, ": Loss", curr_loss)
-            # print('Iteration', i, ": Loss", curr_loss)
             for t in range(T-1):
                 next_estimate = self.predict(curr_estimate, meas_torch[t], u_torch[t] if u_seq is not None else None)
                 next_obs_estimate = self.Cprime @ next_estimate
