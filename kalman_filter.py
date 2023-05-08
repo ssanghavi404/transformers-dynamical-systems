@@ -110,9 +110,9 @@ class LearnedKFilter:
                 A' = A (I - K C) and B' = B and G' = A K
             from given measurements and inputs'''
         T = meas.shape[0]
-        meas_torch = torch.tensor(meas, requires_grad=False)
+        meas_torch = torch.tensor(meas, requires_grad=False, device=myDevice)
         if u_seq is None: u_seq = np.zeros(shape=(T, self.input_size))
-        u_torch = torch.tensor(u_seq, requires_grad=False)
+        u_torch = torch.tensor(u_seq, requires_grad=False, device=myDevice)
 
         curr_loss = float('inf')
         i = 1
@@ -141,8 +141,9 @@ class LearnedKFilter:
         T = measurements.shape[0]
         states = np.zeros(shape=(T, self.state_size))
         curr_state = self.starting_state
+        
         for t in range(T):
-            next_state = self.predict(curr_state, torch.tensor(measurements[t], requires_grad=False), torch.tensor(inputs[t], requires_grad=False) if inputs is not None else None)
-            states[t] = next_state.detach().numpy()
+            next_state = self.predict(curr_state, torch.tensor(measurements[t], requires_grad=False, device=myDevice), torch.tensor(inputs[t], requires_grad=False, device=myDevice) if inputs is not None else None)
+            states[t] = next_state.detach().cpu().numpy()
             curr_state = next_state
         return states
