@@ -38,16 +38,16 @@ def optimal_traj(A, B, C, Q, R, meas, x0, u_seq):
     obj = 0
     for i in range(1, T):
         w_hyp = xs[i, :].T - A @ xs[i-1, :].T - B @ u_seq[i, :].T
-        obj += cp.quad_form(w_hyp, Qinv) # Minimize process noise
+        obj += cp.quad_form(w_hyp, Qinv) # Minimize sum of process noises....
     for i in range(T):
         v_hyp = meas[i, :] - C @ xs[i, :].T
-        obj += cp.quad_form(v_hyp, Rinv) # Minimize sensor noises
+        obj += cp.quad_form(v_hyp, Rinv) # ...and sum of sensor noises
 
     # Special handling for the first state
     w_hyp0 = xs[0, :] - A @ x0 - B @ u_seq[0]     
     obj += cp.quad_form(w_hyp0, Qinv)
 
-    # Setup and solve CVXPY problem with the objective above.
+    # Solve CVXPY problem with the objective above.
     prob = cp.Problem(cp.Minimize(obj))
     prob.solve()
     ls_rec = xs.value
